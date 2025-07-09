@@ -1,0 +1,70 @@
+name: Container Build Push
+description: Action to build a container and push it to the container repo
+inputs:
+  version:
+    description: The version of the container
+    required: true
+  push:
+    description: Push the container to the container repo
+    required: false
+    default: "true"
+  project_id:
+    description: Google Cloud project ID
+    required: true
+  workload-identity_provider:
+    description: GCP Workload Identity Provider
+    required: true
+  auth-token:
+    description: Dependency auth token
+    required: false
+  working-dir:
+    description: The working directory of the project
+    required: false
+    default: "."
+runs:
+  using: composite
+  steps:
+    - name: Generate DateTime
+      run: |
+        echo "NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+      shell: bash
+      
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity_provider }}
+        project_id: ${{ inputs.project_id }}
+
+    - name: Login to Google Artifact Repository
+      uses: docker/login-action@v3
+      with:
+        registry: asia-south1-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.auth_token  }}
+
+    - name: Build and push Docker images
+      uses: docker/build-push-action@v6
+      with:
+        pull: true
+        push: ${{ inputs.push }}
+        tags: asia-south1-docker.pkg.dev/internal-457005/containers/${{ github.event.repository.name }}:${{ inputs.version }}
+        context: ${{ inputs.working-dir }}
+        labels: |
+          org.opencontainers.image.created=${{ env.NOW }}
+          org.opencontainers.image.version=${{ inputs.version }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.vendor=Dharmalife
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        secrets: |
+          "NPM_TOKEN=//npm.pkg.github.com/:_authToken=${{ inputs.auth-token }}
+          @dharmalife-foundation:registry=https://npm.pkg.github.com/"
+          "GO_PRIVATE_SECRET=${{ inputs.auth-token }}"
+          "GPR_USERNAME=dharmalife3"
+          "GPR_PASSWORD=${{ inputs.auth-token }}"
